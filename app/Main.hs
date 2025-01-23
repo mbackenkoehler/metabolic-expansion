@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main
   ( main
@@ -28,6 +29,14 @@ expandTree = do
   putStrLn "Reading data"
   reactomeJSON <- BS.readFile =<< Cfg.require cfgFile "input.reactome"
   metabolismJSON <- BS.readFile =<< Cfg.require cfgFile "input.model"
+  (policyPar :: String) <- Cfg.require cfgFile "exploration.policy"
+  let policy =
+        case policyPar of
+          "strict" -> strict
+          "permissive" -> permissive
+          _ ->
+            error
+              $ "unknown policy " <> policyPar <> ". Use strict or permissive."
   case readData reactomeJSON metabolismJSON of
     Left err -> putStrLn $ "Error: " ++ err
     Right (metabolites, reactome) -> do
@@ -35,7 +44,7 @@ expandTree = do
       initial <- Cfg.require cfgFile "exploration.initial"
       putStrLn
         $ "BFS to depth " <> show depth <> "; starting at " <> show initial
-      let expandedTree = expansion metabolites reactome initial permissive depth
+      let expandedTree = expansion metabolites reactome initial policy depth
       let newCompounds = allProducts expandedTree \\ metabolites
       putStrLn $ "Search tree size: " <> show (treeSize expandedTree)
       putStrLn $ "New compounds: " <> show (length newCompounds)
