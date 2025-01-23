@@ -1,77 +1,22 @@
-{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Lib
+module Products
   ( expansion
-  , readReactions
   , allProducts
   , treeSize
-  , MetaboliteId
-  , MetaboliteNames
-  , ReactionMap
-  , Reaction
   ) where
 
 import           Data.Aeson
-import           Data.Aeson.Types
-import           Data.ByteString.Lazy (ByteString)
-import           Data.Hashable        (hash)
-import           Data.List            (sort)
-import           Data.Map             (Map)
-import qualified Data.Map             as Map
-import           Data.Set             (Set, intersection, isSubsetOf, singleton,
-                                       union, (\\))
-import qualified Data.Set             as Set
-import           Data.Text            (Text)
-import           GHC.Generics
+import           Data.Hashable (hash)
+import           Data.List     (sort)
+import qualified Data.Map      as Map
+import           Data.Set      (Set, intersection, isSubsetOf, singleton, union,
+                                (\\))
+import qualified Data.Set      as Set
+import           Metabolome
 
--- Reactome data --------------------------------------------------------------
-type ReactionId = Text
-
-type MetaboliteId = Text
-
-type MetaboliteNames = Set MetaboliteId
-
-data Reaction = Reaction
-  { equation    :: Text
-  , reactants   :: Set MetaboliteId
-  , products    :: Set MetaboliteId
-  , equationCid :: Text
-  , enzyme      :: Maybe [Text]
-  , brite       :: Maybe Text
-  , rclass      :: Maybe [Text]
-  } deriving (Show, Generic)
-
-instance FromJSON Reaction where
-  parseJSON =
-    withObject "Reaction" $ \v ->
-      Reaction
-        <$> v .: "Equation"
-        <*> (Set.fromList . Map.keys
-               <$> (v .: "Reactants" :: Parser (Map MetaboliteId [Text])))
-        <*> (Set.fromList . Map.keys
-               <$> (v .: "Products" :: Parser (Map MetaboliteId [Text])))
-        <*> v .: "Equation_cid"
-        <*> v .:? "Enzyme"
-        <*> v .:? "BRITE"
-        <*> v .:? "RCLASS"
-
-type ReactionMap = Map ReactionId Reaction
-
-readReactions :: ByteString -> Either String (MetaboliteNames, ReactionMap)
-readReactions jsonInput = do
-  reactions <- eitherDecode jsonInput
-  let metabolites = buildMetaboliteList reactions
-  return (metabolites, reactions)
-  where
-    buildMetaboliteList reactions =
-      let combine reaction = Set.union (reactants reaction) (products reaction)
-       in Set.unions (combine <$> reactions)
-
--- Product-space exploration --------------------------------------------------
 data Tree = Tree
   { incoming :: Maybe ReactionId
   , novel    :: Set MetaboliteId

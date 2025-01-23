@@ -8,16 +8,19 @@ import           Data.Aeson
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.Configurator    as Cfg
 import           Data.Set             ((\\))
-import           Lib
+
+import           Metabolome
+import           Products
 
 readData ::
      BS.ByteString
   -> BS.ByteString
   -> Either String (MetaboliteNames, ReactionMap)
 readData reactomeJSON metabolismJSON = do
-  (_, reactomeReactions) <- readReactions reactomeJSON
+  (_, reactome) <- readReactions reactomeJSON
+  let reactomeRev = mirrorReactions reactome
   (modelMetabolites, _) <- readReactions metabolismJSON
-  return (modelMetabolites, reactomeReactions)
+  return (modelMetabolites, reactome <> reactomeRev)
 
 expandTree :: IO ()
 expandTree = do
