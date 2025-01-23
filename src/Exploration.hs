@@ -2,10 +2,12 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Products
+module Exploration
   ( expansion
   , allProducts
   , treeSize
+  , strict
+  , permissive
   ) where
 
 import           Data.Aeson
@@ -29,14 +31,15 @@ instance ToJSON Tree where
     object
       [ "hash" .= nodeHash tree
       , "incoming" .= tree.incoming
-      , "novel" .= novel tree
-      , "children" .= children tree
+      , "novel" .= tree.novel
+      , "present" .= tree.present
+      , "children" .= tree.children
       ]
 
 allProducts :: Tree -> Set MetaboliteId
 allProducts tree =
   Set.union tree.novel
-    $ maybe Set.empty (Set.unions . fmap allProducts) (children tree)
+    $ maybe Set.empty (Set.unions . fmap allProducts) (tree.children)
 
 treeSize :: Tree -> Int
 treeSize = (+ 1) . maybe 0 (sum . fmap treeSize) . children
@@ -46,37 +49,53 @@ nodeHash node = hash (hashSet node.present, hashSet node.novel)
   where
     hashSet = hash . mconcat . sort . Set.toList
 
-expand :: ReactionMap -> Tree -> Tree
-expand reactions node =
+type Policy = Reaction -> Tree -> Bool
+
+strict :: Policy
+strict reaction node = stoichValidity reaction node && interesting reaction node
+
+stoichValidity :: Policy
+stoichValidity reaction node = reaction.reactants `isSubsetOf` node.present
+
+interesting :: Policy
+interesting reaction node =
+  not (null (reaction.reactants `intersection` node.novel))
+    && not (reaction.products `isSubsetOf` node.present)
+
+permissive :: Policy
+permissive = interesting
+
+expand :: ReactionMap -> Policy -> Tree -> Tree
+expand reactions policy node =
   Tree
     { incoming = node.incoming
     , novel = node.novel
     , present = node.present
     , children =
         case node.children of
-          Just nodes -> Just (expand reactions <$> nodes)
+          Just nodes -> Just (expand reactions policy <$> nodes)
           Nothing ->
             Just
               [ Tree
                 { incoming = Just reactionId
-                , novel = products reaction \\ present node
-                , present = products reaction `union` present node
+                , novel = reaction.products \\ node.present
+                , present = reaction.products `union` node.present
                 , children = Nothing
                 }
               | (reactionId, reaction) <- Map.assocs reactions
-              , reactants reaction `isSubsetOf` node.present
-              , not (null (reaction.reactants `intersection` node.novel))
-                  && not (reaction.products `isSubsetOf` node.present)
+              , policy reaction node
               ]
     }
 
-expansion :: Set MetaboliteId -> ReactionMap -> MetaboliteId -> Int -> Tree
-expansion metabolites reactions startingMetabolite depth =
-  let root =
+expansion ::
+     Set MetaboliteId -> ReactionMap -> MetaboliteId -> Policy -> Int -> Tree
+expansion metabolites reactions startingMetabolite policy depth =
+  let startSet = singleton startingMetabolite
+      root =
         Tree
           { incoming = Nothing
-          , novel = singleton startingMetabolite
-          , present = metabolites
+          , novel = startSet
+          , present = metabolites `union` startSet
           , children = Nothing
           }
-   in iterate (expand reactions) root !! depth
+   in iterate (expand reactions policy) root !! depth

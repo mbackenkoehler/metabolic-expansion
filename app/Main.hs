@@ -9,8 +9,8 @@ import qualified Data.ByteString.Lazy as BS
 import qualified Data.Configurator    as Cfg
 import           Data.Set             ((\\))
 
+import           Exploration
 import           Metabolome
-import           Products
 
 readData ::
      BS.ByteString
@@ -35,7 +35,7 @@ expandTree = do
       initial <- Cfg.require cfgFile "exploration.initial"
       putStrLn
         $ "BFS to depth " <> show depth <> "; starting at " <> show initial
-      let expandedTree = expansion metabolites reactome initial depth
+      let expandedTree = expansion metabolites reactome initial permissive depth
       let newCompounds = allProducts expandedTree \\ metabolites
       putStrLn $ "Search tree size: " <> show (treeSize expandedTree)
       putStrLn $ "New compounds: " <> show (length newCompounds)
