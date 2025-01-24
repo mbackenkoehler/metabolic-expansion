@@ -5,10 +5,13 @@ module Main
   ( main
   ) where
 
+import Control.Monad (forM_)
 import           Data.Aeson
-import qualified Data.ByteString.Lazy as BS
-import qualified Data.Configurator    as Cfg
-import           Data.Set             ((\\))
+import qualified Data.ByteString.Lazy    as BS
+import qualified Data.Configurator       as Cfg
+import           Data.Configurator.Types (Config)
+import           Data.Set                ((\\))
+import           System.Environment      (getArgs)
 
 import           Exploration
 import           Metabolome
@@ -23,13 +26,12 @@ readData reactomeJSON metabolismJSON = do
   (modelMetabolites, _) <- readReactions metabolismJSON
   return (modelMetabolites, reactome <> reactomeRev)
 
-expandTree :: IO ()
-expandTree = do
-  cfgFile <- Cfg.load ["config.cfg"]
-  putStrLn "Reading data"
-  reactomeJSON <- BS.readFile =<< Cfg.require cfgFile "input.reactome"
-  metabolismJSON <- BS.readFile =<< Cfg.require cfgFile "input.model"
-  (policyPar :: String) <- Cfg.require cfgFile "exploration.policy"
+expandTree :: Config -> IO ()
+expandTree config = do
+  putStrLn "-> Reading data"
+  reactomeJSON <- BS.readFile =<< Cfg.require config "input.reactome"
+  metabolismJSON <- BS.readFile =<< Cfg.require config "input.model"
+  (policyPar :: String) <- Cfg.require config "exploration.policy"
   let policy =
         case policyPar of
           "strict" -> strict
@@ -40,17 +42,22 @@ expandTree = do
   case readData reactomeJSON metabolismJSON of
     Left err -> putStrLn $ "Error: " ++ err
     Right (metabolites, reactome) -> do
-      depth <- Cfg.require cfgFile "exploration.depth"
-      initial <- Cfg.require cfgFile "exploration.initial"
+      depth <- Cfg.require config "exploration.depth"
+      initial <- Cfg.require config "exploration.initial"
       putStrLn
-        $ "BFS to depth " <> show depth <> "; starting at " <> show initial
+        $ "-> BFS to depth " <> show depth <> "; starting at " <> show initial
       let expandedTree = expansion metabolites reactome initial policy depth
       let newCompounds = allProducts expandedTree \\ metabolites
-      putStrLn $ "Search tree size: " <> show (treeSize expandedTree)
-      putStrLn $ "New compounds: " <> show (length newCompounds)
-      searchSpaceFilePath <- Cfg.require cfgFile "exploration.output"
-      putStrLn $ "Search tree written to " <> searchSpaceFilePath
+      putStrLn $ "   Search tree size: " <> show (treeSize expandedTree)
+      putStrLn $ "   New compounds: " <> show (length newCompounds)
+      searchSpaceFilePath <- Cfg.require config "exploration.output"
+      putStrLn $ "   Search tree written to " <> searchSpaceFilePath
       encodeFile searchSpaceFilePath expandedTree
 
 main :: IO ()
-main = expandTree
+main = do
+  args <- getArgs
+  forM_ args $ \configFile -> do
+    putStrLn $ "-> Configuration: " <> configFile
+    config <- Cfg.load [Cfg.Required configFile]
+    expandTree config
