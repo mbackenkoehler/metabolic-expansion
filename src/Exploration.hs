@@ -24,6 +24,7 @@ data Tree = Tree
   , novel    :: Set MetaboliteId
   , present  :: Set MetaboliteId
   , children :: Maybe [Tree]
+  , missing  :: Set MetaboliteId
   } deriving (Show)
 
 instance ToJSON Tree where
@@ -34,6 +35,7 @@ instance ToJSON Tree where
       , "novel" .= tree.novel
       , "present" .= tree.present
       , "children" .= tree.children
+      , "missing" .= tree.missing
       ]
 
 allProducts :: Tree -> Set MetaboliteId
@@ -45,7 +47,8 @@ treeSize :: Tree -> Int
 treeSize = (+ 1) . maybe 0 (sum . fmap treeSize) . children
 
 nodeHash :: Tree -> Int
-nodeHash node = hash (hashSet node.present, hashSet node.novel)
+nodeHash node =
+  hash [hashSet node.present, hashSet node.novel, hashSet node.missing]
   where
     hashSet = hash . mconcat . sort . Set.toList
 
@@ -63,7 +66,9 @@ interesting reaction node =
     && not (reaction.products `isSubsetOf` node.present)
 
 permissive :: Policy
-permissive = interesting
+permissive reaction node =
+  interesting reaction node
+    && not (null (reaction.products \\ node.present \\ reaction.reactants))
 
 expand :: ReactionMap -> Policy -> Tree -> Tree
 expand reactions policy node =
@@ -71,6 +76,7 @@ expand reactions policy node =
     { incoming = node.incoming
     , novel = node.novel
     , present = node.present
+    , missing = node.missing
     , children =
         case node.children of
           Just nodes -> Just (expand reactions policy <$> nodes)
@@ -81,6 +87,7 @@ expand reactions policy node =
                 , novel = reaction.products \\ node.present
                 , present = reaction.products `union` node.present
                 , children = Nothing
+                , missing = reaction.reactants \\ node.present
                 }
               | (reactionId, reaction) <- Map.assocs reactions
               , policy reaction node
@@ -97,5 +104,6 @@ expansion metabolites reactions startingMetabolite policy depth =
           , novel = startSet
           , present = metabolites `union` startSet
           , children = Nothing
+          , missing = Set.empty
           }
    in iterate (expand reactions policy) root !! depth
