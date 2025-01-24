@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -5,13 +6,14 @@ module Main
   ( main
   ) where
 
-import Control.Monad (forM_)
+import           Control.Monad           (forM_, when)
 import           Data.Aeson
 import qualified Data.ByteString.Lazy    as BS
 import qualified Data.Configurator       as Cfg
 import           Data.Configurator.Types (Config)
 import           Data.Set                ((\\))
 import           System.Environment      (getArgs)
+import           System.Exit             (ExitCode (..), exitWith)
 
 import           Exploration
 import           Metabolome
@@ -31,14 +33,16 @@ expandTree config = do
   putStrLn "-> Reading data"
   reactomeJSON <- BS.readFile =<< Cfg.require config "input.reactome"
   metabolismJSON <- BS.readFile =<< Cfg.require config "input.model"
-  (policyPar :: String) <- Cfg.require config "exploration.policy"
-  let policy =
-        case policyPar of
-          "strict" -> strict
-          "permissive" -> permissive
-          _ ->
-            error
-              $ "unknown policy " <> policyPar <> ". Use strict or permissive."
+  policy <-
+    Cfg.require config "exploration.policy" >>= \case
+      "strict" -> pure strict
+      "permissive" -> pure permissive
+      (p :: String) -> do
+        putStrLn
+          $ "Error: Unknown policy "
+              <> show p
+              <> ". Use \"strict\" or \"permissive\"."
+        exitWith (ExitFailure 1)
   case readData reactomeJSON metabolismJSON of
     Left err -> putStrLn $ "Error: " ++ err
     Right (metabolites, reactome) -> do
@@ -57,7 +61,9 @@ expandTree config = do
 main :: IO ()
 main = do
   args <- getArgs
+  when (null args) $ do
+    putStrLn "Error: Supply a configuration file."
+    exitWith (ExitFailure 1)
   forM_ args $ \configFile -> do
     putStrLn $ "-> Configuration: " <> configFile
-    config <- Cfg.load [Cfg.Required configFile]
-    expandTree config
+    expandTree =<< Cfg.load [Cfg.Required configFile]

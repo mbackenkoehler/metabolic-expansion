@@ -27,6 +27,7 @@ dependencies:
 - bytestring
 - configurator
 - hashable
+- parallel
 
 ghc-options:
 - -Wall
