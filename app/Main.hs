@@ -7,12 +7,15 @@ module Main
   ) where
 
 import           Control.Monad           (forM_, when)
-import           Data.Aeson
+import           Data.Aeson              (encodeFile)
 import qualified Data.ByteString.Lazy    as BS
 import qualified Data.Configurator       as Cfg
 import           Data.Configurator.Types (Config)
-import           Data.Map                (empty)
+import           Data.Csv
+import           Data.Foldable           (toList)
+import qualified Data.Map                as Map
 import           Data.Set                ((\\))
+import           Data.Text               (Text)
 import           System.Environment      (getArgs)
 import           System.Exit             (ExitCode (..), exitWith)
 
@@ -58,6 +61,31 @@ expandTree config = do
       putStrLn $ "   New compounds: " <> show (length newCompounds)
       writeOutput config expandedTree
 
+data CompoundRecord = CompoundRecord
+  { cmpdName :: Text
+  , keggId   :: MetaboliteId
+  } deriving (Show)
+
+instance FromNamedRecord CompoundRecord where
+  parseNamedRecord r = CompoundRecord <$> r .: "name" <*> r .: "KEGG"
+
+readCompoundMap :: FilePath -> IO (Map.Map Text Text)
+readCompoundMap filePath = do
+  csvData <- BS.readFile filePath
+  case decodeByName csvData of
+    Left err -> do
+      putStrLn $ "Error parsing CSV: " ++ err
+      return Map.empty
+    Right (_, records) -> do
+      putStrLn $ "   Compound names read from " <> filePath
+      return $ Map.fromList [(keggId rec, cmpdName rec) | rec <- toList records]
+
+readCompoundInfo :: Config -> IO (Map.Map MetaboliteId Text)
+readCompoundInfo config = do
+  Cfg.lookup config "input.compound_info" >>= \case
+    Nothing -> return Map.empty
+    Just filename -> readCompoundMap filename
+
 writeOutput :: Config -> Tree -> IO ()
 writeOutput config tree = do
   searchSpaceFilePath <- Cfg.require config "exploration.output"
@@ -66,7 +94,8 @@ writeOutput config tree = do
   Cfg.lookup config "exploration.graph" >>= \case
     Nothing -> return ()
     Just outputFile -> do
-      BS.writeFile outputFile $ plotTreeAsGraph empty tree
+      names <- readCompoundInfo config
+      BS.writeFile outputFile $ plotTreeAsGraph names tree
       putStrLn $ "   Graph written to " <> outputFile
 
 main :: IO ()
