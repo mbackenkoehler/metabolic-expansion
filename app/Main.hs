@@ -11,10 +11,12 @@ import           Data.Aeson
 import qualified Data.ByteString.Lazy    as BS
 import qualified Data.Configurator       as Cfg
 import           Data.Configurator.Types (Config)
+import           Data.Map                (empty)
 import           Data.Set                ((\\))
 import           System.Environment      (getArgs)
 import           System.Exit             (ExitCode (..), exitWith)
 
+import           Draw
 import           Exploration
 import           Metabolome
 
@@ -54,9 +56,18 @@ expandTree config = do
       let newCompounds = allProducts expandedTree \\ metabolites
       putStrLn $ "   Search tree size: " <> show (treeSize expandedTree)
       putStrLn $ "   New compounds: " <> show (length newCompounds)
-      searchSpaceFilePath <- Cfg.require config "exploration.output"
-      putStrLn $ "   Search tree written to " <> searchSpaceFilePath
-      encodeFile searchSpaceFilePath expandedTree
+      writeOutput config expandedTree
+
+writeOutput :: Config -> Tree -> IO ()
+writeOutput config tree = do
+  searchSpaceFilePath <- Cfg.require config "exploration.output"
+  putStrLn $ "   Search tree written to " <> searchSpaceFilePath
+  encodeFile searchSpaceFilePath tree
+  Cfg.lookup config "exploration.graph" >>= \case
+    Nothing -> return ()
+    Just outputFile -> do
+      BS.writeFile outputFile $ plotTreeAsGraph empty tree
+      putStrLn $ "   Graph written to " <> outputFile
 
 main :: IO ()
 main = do

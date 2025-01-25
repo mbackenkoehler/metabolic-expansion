@@ -10,6 +10,9 @@ module Exploration
   , treeSize
   , strict
   , permissive
+  , nodeHash
+  , Tree(..)
+  , MetaboliteId
   ) where
 
 import           Control.Parallel.Strategies
@@ -56,47 +59,43 @@ nodeHash node =
   where
     hashSet = hash . mconcat . sort . Set.toList
 
-type Policy = Reaction -> Tree -> Bool
+type Policy = Tree -> Reaction -> Bool
 
 strict :: Policy
-strict reaction node = stoichValidity reaction node && interesting reaction node
+strict node reaction = stoichValidity node reaction && interesting node reaction
 
 stoichValidity :: Policy
-stoichValidity reaction node = reaction.reactants `isSubsetOf` node.present
+stoichValidity node reaction = reaction.reactants `isSubsetOf` node.present
 
 interesting :: Policy
-interesting reaction node =
+interesting node reaction =
   not (null (reaction.reactants `intersection` node.novel))
     && not (reaction.products `isSubsetOf` node.present)
 
 permissive :: Policy
-permissive reaction node =
-  interesting reaction node
+permissive node reaction =
+  interesting node reaction
     && not (null (reaction.products \\ node.present \\ reaction.reactants))
 
 expand :: ReactionMap -> Policy -> Tree -> Tree
 expand reactions policy node =
-  Tree
-    { incoming = node.incoming
-    , novel = node.novel
-    , present = node.present
-    , missing = node.missing
-    , children =
+  node
+    { children =
         case node.children of
           Just nodes -> Just (parMap rdeepseq (expand reactions policy) nodes)
-          Nothing ->
-            Just
-              [ Tree
-                { incoming = Just reactionId
-                , novel = reaction.products \\ node.present
-                , present = reaction.products `union` node.present
-                , children = Nothing
-                , missing = reaction.reactants \\ node.present
-                }
-              | (reactionId, reaction) <- Map.assocs reactions
-              , policy reaction node
-              ]
+          Nothing    -> Just expandedChildren
     }
+  where
+    expandedChildren =
+      newChild <$> filter (policy node . snd) (Map.assocs reactions)
+    newChild (reactionId, reaction :: Reaction) =
+      Tree
+        { incoming = Just reactionId
+        , novel = reaction.products \\ node.present
+        , present = reaction.products `union` node.present
+        , children = Nothing
+        , missing = reaction.reactants \\ node.present
+        }
 
 expansion ::
      Set MetaboliteId -> ReactionMap -> MetaboliteId -> Policy -> Int -> Tree
