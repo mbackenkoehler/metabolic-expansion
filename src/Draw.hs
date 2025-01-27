@@ -10,6 +10,8 @@ module Draw
 
 import           Data.Aeson
 import qualified Data.ByteString.Lazy as BL
+import           Data.Hashable        (hash)
+import           Data.List            (nub)
 import           Data.Map             (Map, (!?))
 import qualified Data.Map             as Map
 import           Data.Maybe           (fromMaybe)
@@ -29,14 +31,14 @@ data Node = Node
   , id    :: NodeId
   , label :: Text
   , shape :: Text
-  } deriving (Generic, Show, ToJSON)
+  } deriving (Generic, Show, Eq, ToJSON)
 
 data Edge = Edge
   { arrows :: Text
   , from   :: NodeId
   , to     :: NodeId
   , label  :: Text
-  } deriving (Generic, Show, ToJSON)
+  } deriving (Generic, Show, Eq, ToJSON)
 
 type Graph = ([Node], [Edge])
 
@@ -44,7 +46,7 @@ plotTreeAsGraph :: Map MetaboliteId Text -> Tree -> BL.ByteString
 plotTreeAsGraph names = renderBS . pyvis . extractGraph names
 
 extractGraph :: Map MetaboliteId Text -> Tree -> Graph
-extractGraph names tree = (Map.elems nodeMap, edges'')
+extractGraph names tree = (Map.elems nodeMap, nub edges'')
   where
     (nodeMap, edges'') = extractGraph' tree
     extractGraph' :: Tree -> (Map NodeId Node, [Edge])
@@ -59,6 +61,26 @@ extractGraph names tree = (Map.elems nodeMap, edges'')
                     $ [fromMaybe c (names !? c) | c <- Set.toList t.novel]
               , shape = "dot"
               }
+          missingNodes =
+            Map.fromList
+              [ ( hash m
+                , Node
+                    { color = "red"
+                    , id = hash m
+                    , label = fromMaybe m (names !? m)
+                    , shape = "dot"
+                    })
+              | m <- Set.toList t.missing
+              ]
+          missingEdges =
+            [ Edge
+              { arrows = "to"
+              , from = hash m
+              , to = curHash
+              , label = fromMaybe "" t.incoming
+              }
+            | m <- Set.toList t.missing
+            ]
           descendants = fromMaybe [] t.children
           edges =
             [ Edge
@@ -70,8 +92,8 @@ extractGraph names tree = (Map.elems nodeMap, edges'')
             | c <- descendants
             ]
           (nodes', edges') = unzip $ extractGraph' <$> descendants
-       in ( Map.insert curHash node (Map.unions nodes')
-          , Prelude.concat (edges : edges'))
+       in ( Map.insert curHash node (Map.unions (missingNodes : nodes'))
+          , Prelude.concat (missingEdges : edges : edges'))
 
 referrerpolicy_ :: Text -> Attribute
 referrerpolicy_ = makeAttribute "referrerpolicy"
