@@ -69,34 +69,33 @@ data CompoundRecord = CompoundRecord
 instance FromNamedRecord CompoundRecord where
   parseNamedRecord r = CompoundRecord <$> r .: "name" <*> r .: "KEGG"
 
-readCompoundMap :: FilePath -> IO (Map.Map Text Text)
+readCompoundMap :: FilePath -> IO (Map.Map MetaboliteId Text)
 readCompoundMap filePath = do
-  csvData <- BS.readFile filePath
-  case decodeByName csvData of
+  decodeByName <$> BS.readFile filePath >>= \case
     Left err -> do
       putStrLn $ "Error parsing CSV: " ++ err
       return Map.empty
     Right (_, records) -> do
       putStrLn $ "   Compound names read from " <> filePath
-      return $ Map.fromList [(keggId rec, cmpdName rec) | rec <- toList records]
+      return $ Map.fromList [(keggId r, cmpdName r) | r <- toList records]
 
-readCompoundInfo :: Config -> IO (Map.Map MetaboliteId Text)
-readCompoundInfo config = do
-  Cfg.lookup config "input.compound_info" >>= \case
-    Nothing -> return Map.empty
-    Just filename -> readCompoundMap filename
+writeGraph :: Config -> Tree -> FilePath -> IO ()
+writeGraph config tree file = do
+  names <-
+    Cfg.lookup config "input.compound_info"
+      >>= maybe (pure Map.empty) readCompoundMap
+  BS.writeFile file $ plotTreeAsGraph names tree
+  putStrLn $ "   Graph written to " <> file
+
+writeExplorationJSON :: Tree -> FilePath -> IO ()
+writeExplorationJSON tree file = do
+  encodeFile file tree
+  putStrLn $ "   Exploration data written to " <> file
 
 writeOutput :: Config -> Tree -> IO ()
 writeOutput config tree = do
-  searchSpaceFilePath <- Cfg.require config "exploration.output"
-  putStrLn $ "   Search tree written to " <> searchSpaceFilePath
-  encodeFile searchSpaceFilePath tree
-  Cfg.lookup config "exploration.graph" >>= \case
-    Nothing -> return ()
-    Just outputFile -> do
-      names <- readCompoundInfo config
-      BS.writeFile outputFile $ plotTreeAsGraph names tree
-      putStrLn $ "   Graph written to " <> outputFile
+  Cfg.lookup config "exploration.output" >>= mapM_ (writeExplorationJSON tree)
+  Cfg.lookup config "exploration.graph" >>= mapM_ (writeGraph config tree)
 
 main :: IO ()
 main = do
