@@ -33,7 +33,7 @@ data Reaction = Reaction
   { reactants :: Set MetaboliteId
   , products  :: Set MetaboliteId
   , equation  :: Maybe Text -- contains stoichiometry
-  } deriving (Show, Generic)
+  } deriving (Show, Generic, Eq)
 
 instance FromJSON Reaction where
   parseJSON =
