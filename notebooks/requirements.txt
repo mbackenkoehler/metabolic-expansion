@@ -1,6 +1,0 @@
-pandas
-seaborn
-jupyterlab
-rdkit
-pyvis
-networkx
