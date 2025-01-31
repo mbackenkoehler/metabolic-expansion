@@ -14,7 +14,7 @@ import           Data.Hashable        (hash)
 import           Data.List            (nub)
 import           Data.Map             (Map, (!?))
 import qualified Data.Map             as Map
-import           Data.Maybe           (fromMaybe)
+import           Data.Maybe           (fromMaybe, isJust)
 import qualified Data.Set             as Set
 import           Data.Text
 import qualified Data.Text.Encoding   as TE
@@ -23,11 +23,13 @@ import           Lucid
 import           Lucid.Base
 
 import           Exploration
+import           Metabolome
 
 type NodeId = Int
 
 data Node = Node
   { color :: Text
+  , size  :: Float
   , id    :: NodeId
   , label :: Text
   , shape :: Text
@@ -35,26 +37,31 @@ data Node = Node
 
 data Edge = Edge
   { arrows :: Text
+  , title  :: Text
   , from   :: NodeId
   , to     :: NodeId
-  , label  :: Text
   } deriving (Generic, Show, Eq, ToJSON)
 
 type Graph = ([Node], [Edge])
 
-plotTreeAsGraph :: Map MetaboliteId Text -> Tree -> BL.ByteString
-plotTreeAsGraph names = renderBS . pyvis . extractGraph names
+plotTreeAsGraph :: ReactionMap -> Map MetaboliteId Text -> Tree -> BL.ByteString
+plotTreeAsGraph reactions names =
+  renderBS . pyvis . extractGraph reactions names
 
-extractGraph :: Map MetaboliteId Text -> Tree -> Graph
-extractGraph names tree = (Map.elems nodeMap, nub edges'')
+extractGraph :: ReactionMap -> Map MetaboliteId Text -> Tree -> Graph
+extractGraph reactions names tree = (Map.elems nodeMap, nub edges'')
   where
-    (nodeMap, edges'') = extractGraph' tree
-    extractGraph' :: Tree -> (Map NodeId Node, [Edge])
-    extractGraph' t =
+    (nodeMap, edges'') = extractGraph' 40 tree
+    extractGraph' :: Float -> Tree -> (Map NodeId Node, [Edge])
+    extractGraph' nodeSize t =
       let curHash = nodeHash t
           node =
             Node
-              { color = "blue"
+              { color =
+                  if isJust t.incoming
+                    then "blue"
+                    else "green"
+              , size = nodeSize
               , id = curHash
               , label =
                   intercalate ", "
@@ -66,18 +73,20 @@ extractGraph names tree = (Map.elems nodeMap, nub edges'')
               [ ( hash m
                 , Node
                     { color = "red"
+                    , size = nodeSize
                     , id = hash m
                     , label = fromMaybe m (names !? m)
                     , shape = "dot"
                     })
               | m <- Set.toList t.missing
               ]
+          reactionEq = maybe "" equation . (=<<) (reactions !?)
           missingEdges =
             [ Edge
               { arrows = "to"
               , from = hash m
               , to = curHash
-              , label = fromMaybe "" t.incoming
+              , title = reactionEq t.incoming
               }
             | m <- Set.toList t.missing
             ]
@@ -87,11 +96,12 @@ extractGraph names tree = (Map.elems nodeMap, nub edges'')
               { arrows = "to"
               , from = curHash
               , to = nodeHash c
-              , label = fromMaybe "" c.incoming
+              , title = reactionEq c.incoming
               }
             | c <- descendants
             ]
-          (nodes', edges') = unzip $ extractGraph' <$> descendants
+          newNodeSize = nodeSize * 0.8
+          (nodes', edges') = unzip $ extractGraph' newNodeSize <$> descendants
        in ( Map.insert curHash node (Map.unions (missingNodes : nodes'))
           , Prelude.concat (missingEdges : edges : edges'))
 
@@ -149,7 +159,8 @@ pyvis (nodes, edges) = do
         ]
         ("" :: Text)
       -- Inline styles
-      style_ [type_ "text/css"] $ cssStyle
+      style_ [type_ "text/css"] cssStyle
+      title_ "Metabolic expansion"
   body_ $ do
     div_ [class_ "card", style_ "width: 100%"]
       $ div_ [id_ "mynetwork", class_ "card-body"] ""
