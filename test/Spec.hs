@@ -14,29 +14,19 @@ import           Test.Hspec
 
 spec :: Spec
 spec = do
-  let r1 =
-        ( "R1"
-        , Reaction (Set.fromList ["A"]) (Set.fromList ["B"]) (Just "A -> B"))
+  let r1 = ("R1", Reaction (Set.fromList ["A"]) (Set.fromList ["B"]) "A -> B")
       r1Rev =
-        ( "R1_r"
-        , Reaction (Set.fromList ["B"]) (Set.fromList ["A"]) (Just "A -> B"))
-      r2 =
-        ( "R2"
-        , Reaction (Set.fromList ["B"]) (Set.fromList ["C"]) (Just "B -> C"))
-      r3 =
-        ( "R3"
-        , Reaction (Set.fromList ["B"]) (Set.fromList ["C"]) (Just "B -> C"))
-      r3' =
-        ( "R3"
-        , Reaction (Set.fromList ["X"]) (Set.fromList ["D"]) (Just "X -> D"))
+        ("R1_r", Reaction (Set.fromList ["B"]) (Set.fromList ["A"]) "A -> B")
+      r2 = ("R2", Reaction (Set.fromList ["B"]) (Set.fromList ["C"]) "B -> C")
+      r3 = ("R3", Reaction (Set.fromList ["B"]) (Set.fromList ["C"]) "B -> C")
+      r3' = ("R3", Reaction (Set.fromList ["X"]) (Set.fromList ["D"]) "X -> D")
   describe "readReactions" $ do
     it "parses an empty JSON" $ do
-      readReactions (pack "{}") `shouldBe` Right (Set.empty, Map.empty)
+      readReactions (pack "{}") `shouldBe` Right Map.empty
     it "parses a valid JSON into a ReactionMap" $ do
       let jsonInput =
-            "{ \"R1\":{\"Reactants\":{\"A\":[\"metaboliteA\"]},\"Products\":{\"B\":[\"metaboliteB\"]},\"Equation_cid\":\"A -> B\"}}"
-          result = readReactions (pack jsonInput)
-      result `shouldBe` Right (Set.fromList ["A", "B"], Map.fromList [r1])
+            "{ \"R1\":{\"Reactants\":{\"A\":[\"metaboliteA\"]},\"Products\":{\"B\":[\"metaboliteB\"]},\"Equation\":\"A -> B\"}}"
+      readReactions (pack jsonInput) `shouldBe` Right (Map.fromList [r1])
     it "fails on invalid JSON" $ do
       let jsonInput = "[ \"R\" ]"
           result = readReactions (pack jsonInput)
@@ -74,19 +64,16 @@ spec = do
               Set.empty
       allProducts tree `shouldBe` Set.fromList ["A", "C"]
     it "validates strict policy correctly" $ do
-      let reaction =
-            Reaction (Set.fromList ["A"]) (Set.fromList ["B"]) (Just "A -> B")
-          tree =
+      let tree =
             Tree
               Nothing
               (Set.fromList ["A"])
               (Set.fromList ["A"])
               Nothing
               Set.empty
-      strict tree reaction `shouldBe` True
+      strict tree (snd r1) `shouldBe` True
     it "validates permissive policy correctly" $ do
-      let reaction =
-            Reaction (Set.fromList ["A"]) (Set.fromList ["C"]) (Just "A -> C")
+      let reaction = Reaction (Set.fromList ["A"]) (Set.fromList ["C"]) "A -> C"
           tree =
             Tree
               Nothing

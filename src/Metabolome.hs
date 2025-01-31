@@ -5,6 +5,7 @@
 
 module Metabolome
   ( readReactions
+  , modelMetabolites
   , mirrorReactions
   , MetaboliteId
   , MetaboliteNames
@@ -32,7 +33,7 @@ type MetaboliteNames = Set MetaboliteId
 data Reaction = Reaction
   { reactants :: Set MetaboliteId
   , products  :: Set MetaboliteId
-  , equation  :: Maybe Text -- contains stoichiometry
+  , equation  :: Text
   } deriving (Show, Generic, Eq)
 
 instance FromJSON Reaction where
@@ -43,23 +44,21 @@ instance FromJSON Reaction where
                <$> (v .: "Reactants" :: Parser (Map MetaboliteId [Text])))
         <*> (Set.fromList . Map.keys
                <$> (v .: "Products" :: Parser (Map MetaboliteId [Text])))
-        <*> v .: "Equation_cid"
+        <*> v .: "Equation"
 
 type ReactionMap = Map ReactionId Reaction
 
-readReactions :: ByteString -> Either String (MetaboliteNames, ReactionMap)
-readReactions jsonInput = do
-  reactions <- eitherDecode jsonInput
-  let metabolites = buildMetaboliteList reactions
-  return (metabolites, reactions)
-  where
-    buildMetaboliteList reactions =
-      let combine reaction = Set.union (reactants reaction) (products reaction)
-       in Set.unions (combine <$> reactions)
+readReactions :: ByteString -> Either String ReactionMap
+readReactions = eitherDecode
+
+modelMetabolites :: ReactionMap -> MetaboliteNames
+modelMetabolites reactions =
+  let combine reaction = Set.union (reactants reaction) (products reaction)
+   in Set.unions (combine <$> reactions)
 
 mirrorReactions :: ReactionMap -> ReactionMap
 mirrorReactions =
   Map.fromList . fmap (\(ident, r) -> (ident <> "_r", flipReaction r)) . assocs
   where
-    flipReaction Reaction {reactants = rs, products = ps, ..} =
-      Reaction {reactants = ps, products = rs, ..}
+    flipReaction Reaction {reactants = rs, products = ps, equation = eq} =
+      Reaction {reactants = ps, products = rs, equation = eq}

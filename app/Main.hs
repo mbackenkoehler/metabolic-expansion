@@ -7,7 +7,7 @@ module Main
   ) where
 
 import           Control.Monad           (forM_, when)
-import           Data.Aeson              (encodeFile)
+import           Data.Aeson              (eitherDecode, encodeFile)
 import qualified Data.ByteString.Lazy    as BS
 import qualified Data.Configurator       as Cfg
 import           Data.Configurator.Types (Config)
@@ -15,6 +15,7 @@ import           Data.Csv
 import           Data.Foldable           (toList)
 import qualified Data.Map                as Map
 import           Data.Set                ((\\))
+import qualified Data.Set                as Set
 import           Data.Text               (Text)
 import           System.Environment      (getArgs)
 import           System.Exit             (ExitCode (..), exitWith)
@@ -23,43 +24,54 @@ import           Draw
 import           Exploration
 import           Metabolome
 
-readData ::
-     BS.ByteString
-  -> BS.ByteString
-  -> Either String (MetaboliteNames, ReactionMap)
-readData reactomeJSON metabolismJSON = do
-  (_, reactome) <- readReactions reactomeJSON
-  let reactomeRev = mirrorReactions reactome
-  (modelMetabolites, _) <- readReactions metabolismJSON
-  return (modelMetabolites, reactome <> reactomeRev)
+readPolicy :: Config -> IO Policy
+readPolicy config =
+  Cfg.require config "exploration.policy" >>= \case
+    "strict" -> pure strict
+    "permissive" -> pure permissive
+    (p :: String) -> do
+      putStrLn
+        $ "Error: Unknown policy "
+            <> show p
+            <> ". Use \"strict\" or \"permissive\"."
+      exitWith (ExitFailure 1)
+
+readPresentMetabolites :: Config -> IO MetaboliteNames
+readPresentMetabolites config =
+  Cfg.lookup config "input.model" >>= \case
+    Nothing -> return Set.empty
+    Just filepath -> do
+      contentJSON <- BS.readFile filepath
+      case eitherDecode contentJSON of
+        Left err -> do
+          putStrLn $ "Warning: Error decoding input.model: " <> err
+          return Set.empty
+        Right content -> return (modelMetabolites content)
+
+readReactome :: Config -> IO ReactionMap
+readReactome config = do
+  reactomeJSON <- BS.readFile =<< Cfg.require config "input.reactome"
+  case eitherDecode reactomeJSON of
+    Left err -> do
+      putStrLn $ "Error: " ++ err
+      exitWith (ExitFailure 1)
+    Right reactome -> return reactome
 
 expandTree :: Config -> IO ()
 expandTree config = do
   putStrLn "-> Reading data"
-  reactomeJSON <- BS.readFile =<< Cfg.require config "input.reactome"
-  metabolismJSON <- BS.readFile =<< Cfg.require config "input.model"
-  policy <-
-    Cfg.require config "exploration.policy" >>= \case
-      "strict" -> pure strict
-      "permissive" -> pure permissive
-      (p :: String) -> do
-        putStrLn
-          $ "Error: Unknown policy "
-              <> show p
-              <> ". Use \"strict\" or \"permissive\"."
-        exitWith (ExitFailure 1)
-  case readData reactomeJSON metabolismJSON of
-    Left err -> putStrLn $ "Error: " ++ err
-    Right (metabolites, reactome) -> do
-      depth <- Cfg.require config "exploration.depth"
-      initial <- Cfg.require config "exploration.initial"
-      putStrLn
-        $ "-> BFS to depth " <> show depth <> "; starting at " <> show initial
-      let expandedTree = expansion metabolites reactome initial policy depth
-      let newCompounds = allProducts expandedTree \\ metabolites
-      putStrLn $ "   Search tree size: " <> show (treeSize expandedTree)
-      putStrLn $ "   New compounds: " <> show (length newCompounds)
-      writeOutput config expandedTree
+  reactome <- readReactome config
+  metabolites <- readPresentMetabolites config
+  policy <- readPolicy config
+  depth <- Cfg.require config "exploration.depth"
+  initial <- Cfg.require config "exploration.initial"
+  putStrLn
+    $ "-> BFS to depth " <> show depth <> "; starting at " <> show initial
+  let expandedTree = expansion metabolites reactome initial policy depth
+  let newCompounds = allProducts expandedTree \\ metabolites
+  putStrLn $ "   Search tree size: " <> show (treeSize expandedTree)
+  putStrLn $ "   New compounds: " <> show (length newCompounds)
+  writeOutput config reactome expandedTree
 
 data CompoundRecord = CompoundRecord
   { cmpdName :: Text
@@ -79,12 +91,11 @@ readCompoundMap filePath = do
       putStrLn $ "   Compound names read from " <> filePath
       return $ Map.fromList [(keggId r, cmpdName r) | r <- toList records]
 
-writeGraph :: Config -> Tree -> FilePath -> IO ()
-writeGraph config tree file = do
+writeGraph :: Config -> ReactionMap -> Tree -> FilePath -> IO ()
+writeGraph config reactions tree file = do
   names <-
-    Cfg.lookup config "input.compound_info"
-      >>= maybe (pure Map.empty) readCompoundMap
-  BS.writeFile file $ plotTreeAsGraph names tree
+    Cfg.lookup config "input.compound_info" >>= maybe (pure Map.empty) readCompoundMap
+  BS.writeFile file $ plotTreeAsGraph reactions names tree
   putStrLn $ "   Graph written to " <> file
 
 writeExplorationJSON :: Tree -> FilePath -> IO ()
@@ -92,10 +103,10 @@ writeExplorationJSON tree file = do
   encodeFile file tree
   putStrLn $ "   Exploration data written to " <> file
 
-writeOutput :: Config -> Tree -> IO ()
-writeOutput config tree = do
+writeOutput :: Config -> ReactionMap -> Tree -> IO ()
+writeOutput config reactome tree = do
   Cfg.lookup config "exploration.output" >>= mapM_ (writeExplorationJSON tree)
-  Cfg.lookup config "exploration.graph" >>= mapM_ (writeGraph config tree)
+  Cfg.lookup config "exploration.graph" >>= mapM_ (writeGraph config reactome tree)
 
 main :: IO ()
 main = do

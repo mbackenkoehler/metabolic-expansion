@@ -11,6 +11,7 @@ module Exploration
   , strict
   , permissive
   , nodeHash
+  , Policy
   , Tree(..)
   , MetaboliteId
   ) where
