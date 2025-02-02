@@ -7,6 +7,7 @@ module Main
 import           Data.ByteString.Lazy.Char8 (pack)
 import           Data.Either                (isLeft)
 import qualified Data.Map                   as Map
+import           Data.Set                   (singleton)
 import qualified Data.Set                   as Set
 import           Exploration
 import           Metabolome
@@ -20,6 +21,7 @@ spec = do
       r2 = ("R2", Reaction (Set.fromList ["B"]) (Set.fromList ["C"]) "B -> C")
       r3 = ("R3", Reaction (Set.fromList ["B"]) (Set.fromList ["C"]) "B -> C")
       r3' = ("R3", Reaction (Set.fromList ["X"]) (Set.fromList ["D"]) "X -> D")
+      r4 = ("R4", Reaction (Set.fromList ["A", "X"]) (Set.fromList ["B"]) "")
   describe "readReactions" $ do
     it "parses an empty JSON" $ do
       readReactions (pack "{}") `shouldBe` Right Map.empty
@@ -82,21 +84,36 @@ spec = do
               Nothing
               Set.empty
       permissive tree reaction `shouldBe` True
-    it "performs expansion correctly with depth" $ do
+    it "expands network correctly with depth" $ do
       let reactions = Map.fromList [r1, r2]
           metabolites = Set.fromList ["A"]
-          expandedTree = expansion metabolites reactions "A" strict 2
+          expandedTree =
+            expansion metabolites reactions (singleton "A") strict 2
       treeSize expandedTree `shouldBe` 3
-    it "performs expansion correctly with redundant reaction" $ do
+    it "expands network correctly with redundant reaction" $ do
       let reactions = Map.fromList [r1, r2, r3]
           metabolites = Set.fromList ["A"]
-          expandedTree = expansion metabolites reactions "A" strict 2
+          expandedTree =
+            expansion metabolites reactions (singleton "A") strict 2
       treeSize expandedTree `shouldBe` 4
-    it "performs expansion correctly disconnected reaction" $ do
+    it "expands network correctly disconnected reaction" $ do
       let reactions = Map.fromList [r1, r2, r3']
           metabolites = Set.fromList ["A"]
-          expandedTree = expansion metabolites reactions "A" strict 2
+          expandedTree =
+            expansion metabolites reactions (singleton "A") strict 2
       treeSize expandedTree `shouldBe` 3
+    it "expands network correctly permissively" $ do
+      let reactions = Map.fromList [r4]
+          metabolites = Set.fromList ["A"]
+          expandedTree =
+            expansion metabolites reactions (singleton "A") permissive 2
+      treeSize expandedTree `shouldBe` 2
+    it "not expands network correctly permissively" $ do
+      let reactions = Map.fromList [r2]
+          metabolites = Set.fromList ["A"]
+          expandedTree =
+            expansion metabolites reactions (singleton "A") permissive 2
+      treeSize expandedTree `shouldBe` 1
 
 main :: IO ()
 main = hspec spec

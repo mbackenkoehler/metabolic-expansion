@@ -14,9 +14,9 @@ import           Data.Hashable        (hash)
 import           Data.List            (nub)
 import           Data.Map             (Map, (!?))
 import qualified Data.Map             as Map
-import           Data.Maybe           (fromMaybe, isJust)
+import           Data.Maybe           (catMaybes, fromMaybe, isJust)
 import qualified Data.Set             as Set
-import           Data.Text
+import           Data.Text            hiding (foldl)
 import qualified Data.Text.Encoding   as TE
 import           GHC.Generics
 import           Lucid
@@ -32,40 +32,56 @@ data Node = Node
   , size  :: Float
   , id    :: NodeId
   , label :: Text
+  , title :: Text
   , shape :: Text
   } deriving (Generic, Show, Eq, ToJSON)
 
 data Edge = Edge
   { arrows :: Text
-  , title  :: Text
+  , title  :: Maybe Text
+  , label  :: Maybe Text
   , from   :: NodeId
   , to     :: NodeId
   } deriving (Generic, Show, Eq, ToJSON)
 
 type Graph = ([Node], [Edge])
 
-plotTreeAsGraph :: ReactionMap -> Map MetaboliteId Text -> Tree -> BL.ByteString
-plotTreeAsGraph reactions names =
-  renderBS . pyvis . extractGraph reactions names
+plotTreeAsGraph ::
+     ReactionMap -- reactome
+  -> Map MetaboliteId Text -- metabolite names
+  -> Map MetaboliteId Float -- relevance labels
+  -> Tree -- expanded tree
+  -> BL.ByteString
+plotTreeAsGraph reactions names relevance =
+  renderBS . pyvis . extractGraph reactions names relevance
 
-extractGraph :: ReactionMap -> Map MetaboliteId Text -> Tree -> Graph
-extractGraph reactions names tree = (Map.elems nodeMap, nub edges'')
+extractGraph ::
+     ReactionMap
+  -> Map MetaboliteId Text
+  -> Map MetaboliteId Float
+  -> Tree
+  -> Graph
+extractGraph reactions names relevance tree = (Map.elems nodeMap, nub edges'')
   where
-    (nodeMap, edges'') = extractGraph' 40 tree
+    initSize = 40
+    (nodeMap, edges'') = extractGraph' initSize tree
     extractGraph' :: Float -> Tree -> (Map NodeId Node, [Edge])
     extractGraph' nodeSize t =
       let curHash = nodeHash t
+          sim =
+            foldl max 0 . catMaybes $ (relevance !?) <$> Set.toList (novel t)
           node =
             Node
               { color =
                   if isJust t.incoming
                     then "blue"
                     else "green"
-              , size = nodeSize
+              , size = max 5 (sim * nodeSize)
               , id = curHash
               , label =
                   intercalate ", "
                     $ [fromMaybe c (names !? c) | c <- Set.toList t.novel]
+              , title = "Similarity: " <> pack (show sim)
               , shape = "dot"
               }
           missingNodes =
@@ -76,16 +92,18 @@ extractGraph reactions names tree = (Map.elems nodeMap, nub edges'')
                     , size = nodeSize
                     , id = hash m
                     , label = fromMaybe m (names !? m)
+                    , title = ""
                     , shape = "dot"
                     })
               | m <- Set.toList t.missing
               ]
-          reactionEq = maybe "" equation . (=<<) (reactions !?)
+          reactionEq = fmap equation . (=<<) (reactions !?)
           missingEdges =
             [ Edge
               { arrows = "to"
               , from = hash m
               , to = curHash
+              , label = t.incoming
               , title = reactionEq t.incoming
               }
             | m <- Set.toList t.missing
@@ -96,11 +114,12 @@ extractGraph reactions names tree = (Map.elems nodeMap, nub edges'')
               { arrows = "to"
               , from = curHash
               , to = nodeHash c
+              , label = c.incoming
               , title = reactionEq c.incoming
               }
             | c <- descendants
             ]
-          newNodeSize = nodeSize * 0.8
+          newNodeSize = nodeSize * 0.9
           (nodes', edges') = unzip $ extractGraph' newNodeSize <$> descendants
        in ( Map.insert curHash node (Map.unions (missingNodes : nodes'))
           , Prelude.concat (missingEdges : edges : edges'))

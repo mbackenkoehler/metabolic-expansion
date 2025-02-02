@@ -1,6 +1,7 @@
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 
 module Main
   ( main
@@ -53,7 +54,7 @@ readReactome config = do
   reactomeJSON <- BS.readFile =<< Cfg.require config "input.reactome"
   case eitherDecode reactomeJSON of
     Left err -> do
-      putStrLn $ "Error: " ++ err
+      putStrLn $ "Error: " <> err
       exitWith (ExitFailure 1)
     Right reactome -> return reactome
 
@@ -64,7 +65,7 @@ expandTree config = do
   metabolites <- readPresentMetabolites config
   policy <- readPolicy config
   depth <- Cfg.require config "exploration.depth"
-  initial <- Cfg.require config "exploration.initial"
+  initial <- Set.fromList <$> Cfg.require config "exploration.initial"
   putStrLn
     $ "-> BFS to depth " <> show depth <> "; starting at " <> show initial
   let expandedTree = expansion metabolites reactome initial policy depth
@@ -85,17 +86,40 @@ readCompoundMap :: FilePath -> IO (Map.Map MetaboliteId Text)
 readCompoundMap filePath = do
   decodeByName <$> BS.readFile filePath >>= \case
     Left err -> do
-      putStrLn $ "Error parsing CSV: " ++ err
+      putStrLn $ "Error parsing CSV: " <> err
       return Map.empty
     Right (_, records) -> do
       putStrLn $ "   Compound names read from " <> filePath
       return $ Map.fromList [(keggId r, cmpdName r) | r <- toList records]
 
+data CompoundSimilarity = CompoundSimilarity
+  { kegg       :: MetaboliteId
+  , similarity :: Float
+  } deriving (Show)
+
+instance FromNamedRecord CompoundSimilarity where
+  parseNamedRecord r =
+    CompoundSimilarity <$> r .: "keggId" <*> r .: "similarity"
+
+readCompoundSimilarities :: FilePath -> IO (Map.Map MetaboliteId Float)
+readCompoundSimilarities filePath = do
+  decodeByName <$> BS.readFile filePath >>= \case
+    Left err -> do
+      putStrLn $ "Error parsing CSV: " <> err
+      return Map.empty
+    Right (_, records) -> do
+      putStrLn $ "   Compound similarities read form " <> filePath
+      return $ Map.fromList [(kegg r, similarity r) | r <- toList records]
+
 writeGraph :: Config -> ReactionMap -> Tree -> FilePath -> IO ()
 writeGraph config reactions tree file = do
   names <-
-    Cfg.lookup config "input.compound_info" >>= maybe (pure Map.empty) readCompoundMap
-  BS.writeFile file $ plotTreeAsGraph reactions names tree
+    Cfg.lookup config "input.compound_info"
+      >>= maybe (pure Map.empty) readCompoundMap
+  similarities <-
+    Cfg.lookup config "input.similarities"
+      >>= maybe (pure Map.empty) readCompoundSimilarities
+  BS.writeFile file $ plotTreeAsGraph reactions names similarities tree
   putStrLn $ "   Graph written to " <> file
 
 writeExplorationJSON :: Tree -> FilePath -> IO ()

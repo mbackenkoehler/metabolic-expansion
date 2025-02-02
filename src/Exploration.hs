@@ -22,7 +22,7 @@ import           Data.Hashable               (hash)
 import           Data.List                   (sort)
 import qualified Data.Map                    as Map
 import           Data.Set                    (Set, intersection, isSubsetOf,
-                                              singleton, union, (\\))
+                                              union, (\\))
 import qualified Data.Set                    as Set
 import           GHC.Generics                (Generic)
 import           Metabolome
@@ -99,10 +99,14 @@ expand reactions policy node =
         }
 
 expansion ::
-     Set MetaboliteId -> ReactionMap -> MetaboliteId -> Policy -> Int -> Tree
-expansion metabolites reactions startingMetabolite policy depth =
-  let startSet = singleton startingMetabolite
-      root =
+     Set MetaboliteId
+  -> ReactionMap
+  -> Set MetaboliteId
+  -> Policy
+  -> Int
+  -> Tree
+expansion metabolites reactions startSet policy depth =
+  let root =
         Tree
           { incoming = Nothing
           , novel = startSet
