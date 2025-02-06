@@ -108,6 +108,12 @@ spec = do
           expandedTree =
             expansion metabolites reactions (singleton "A") permissive 2
       treeSize expandedTree `shouldBe` 2
+    it "not expands known cmpds permissively" $ do
+      let reactions = Map.fromList [r4]
+          metabolites = Set.fromList ["A", "B"]
+          expandedTree =
+            expansion metabolites reactions (singleton "A") permissive 2
+      treeSize expandedTree `shouldBe` 1
     it "not expands network correctly permissively" $ do
       let reactions = Map.fromList [r2]
           metabolites = Set.fromList ["A"]

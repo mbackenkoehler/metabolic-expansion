@@ -21,7 +21,7 @@ import           Data.Map             (Map, assocs)
 import qualified Data.Map             as Map
 import           Data.Set             (Set)
 import qualified Data.Set             as Set
-import           Data.Text            (Text)
+import           Data.Text            (Text, replace)
 import           GHC.Generics
 
 type ReactionId = Text
@@ -44,7 +44,7 @@ instance FromJSON Reaction where
                <$> (v .: "Reactants" :: Parser (Map MetaboliteId [Text])))
         <*> (Set.fromList . Map.keys
                <$> (v .: "Products" :: Parser (Map MetaboliteId [Text])))
-        <*> v .: "Equation"
+        <*> (replace "<=>" "→" <$> v .: "Equation")
 
 type ReactionMap = Map ReactionId Reaction
 
@@ -61,4 +61,4 @@ mirrorReactions =
   Map.fromList . fmap (\(ident, r) -> (ident <> "_r", flipReaction r)) . assocs
   where
     flipReaction Reaction {reactants = rs, products = ps, equation = eq} =
-      Reaction {reactants = ps, products = rs, equation = eq}
+      Reaction {reactants = ps, products = rs, equation = replace "→" "←" eq}

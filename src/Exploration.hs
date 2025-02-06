@@ -10,6 +10,7 @@ module Exploration
   , treeSize
   , strict
   , permissive
+  , relevant
   , nodeHash
   , Policy
   , Tree(..)
@@ -63,20 +64,20 @@ nodeHash node =
 type Policy = Tree -> Reaction -> Bool
 
 strict :: Policy
-strict node reaction = stoichValidity node reaction && interesting node reaction
+strict n r = stoichiometry n r && relevant n r && novelty n r
 
-stoichValidity :: Policy
-stoichValidity node reaction = reaction.reactants `isSubsetOf` node.present
+stoichiometry :: Policy
+stoichiometry n r = r.reactants `isSubsetOf` n.present
 
-interesting :: Policy
-interesting node reaction =
-  not (null (reaction.reactants `intersection` node.novel))
-    && not (reaction.products `isSubsetOf` node.present)
+relevant :: Policy
+relevant n r = not (null (r.reactants `intersection` n.novel))
+
+novelty :: Policy
+novelty n r = not (r.products `isSubsetOf` n.present)
 
 permissive :: Policy
-permissive node reaction =
-  interesting node reaction
-    && not (null (reaction.products \\ node.present \\ reaction.reactants))
+permissive n r =
+  relevant n r && not (null (r.products \\ n.present \\ r.reactants))
 
 expand :: ReactionMap -> Policy -> Tree -> Tree
 expand reactions policy node =

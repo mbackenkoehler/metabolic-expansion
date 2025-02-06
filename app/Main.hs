@@ -30,6 +30,7 @@ readPolicy config =
   Cfg.require config "exploration.policy" >>= \case
     "strict" -> pure strict
     "permissive" -> pure permissive
+    "relevant" -> pure relevant
     (p :: String) -> do
       putStrLn
         $ "Error: Unknown policy "
@@ -51,12 +52,12 @@ readPresentMetabolites config =
 
 readReactome :: Config -> IO ReactionMap
 readReactome config = do
-  reactomeJSON <- BS.readFile =<< Cfg.require config "input.reactome"
+  reactomeJSON <- Cfg.require config "input.reactome" >>= BS.readFile
   case eitherDecode reactomeJSON of
     Left err -> do
       putStrLn $ "Error: " <> err
       exitWith (ExitFailure 1)
-    Right reactome -> return reactome
+    Right reactome -> return $ reactome <> mirrorReactions reactome
 
 expandTree :: Config -> IO ()
 expandTree config = do
@@ -75,12 +76,12 @@ expandTree config = do
   writeOutput config reactome expandedTree
 
 data CompoundRecord = CompoundRecord
-  { cmpdName :: Text
-  , keggId   :: MetaboliteId
+  { keggId   :: MetaboliteId
+  , cmpdName :: Text
   } deriving (Show)
 
 instance FromNamedRecord CompoundRecord where
-  parseNamedRecord r = CompoundRecord <$> r .: "name" <*> r .: "KEGG"
+  parseNamedRecord r = CompoundRecord <$> r .: "KEGG" <*> r .: "name"
 
 readCompoundMap :: FilePath -> IO (Map.Map MetaboliteId Text)
 readCompoundMap filePath = do
@@ -130,7 +131,8 @@ writeExplorationJSON tree file = do
 writeOutput :: Config -> ReactionMap -> Tree -> IO ()
 writeOutput config reactome tree = do
   Cfg.lookup config "exploration.output" >>= mapM_ (writeExplorationJSON tree)
-  Cfg.lookup config "exploration.graph" >>= mapM_ (writeGraph config reactome tree)
+  Cfg.lookup config "exploration.graph"
+    >>= mapM_ (writeGraph config reactome tree)
 
 main :: IO ()
 main = do

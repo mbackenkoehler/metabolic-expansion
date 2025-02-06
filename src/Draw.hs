@@ -16,7 +16,7 @@ import           Data.Map             (Map, (!?))
 import qualified Data.Map             as Map
 import           Data.Maybe           (catMaybes, fromMaybe, isJust)
 import qualified Data.Set             as Set
-import           Data.Text            hiding (foldl)
+import           Data.Text            hiding (foldl, null)
 import qualified Data.Text.Encoding   as TE
 import           GHC.Generics
 import           Lucid
@@ -68,8 +68,13 @@ extractGraph reactions names relevance tree = (Map.elems nodeMap, nub edges'')
     extractGraph' :: Float -> Tree -> (Map NodeId Node, [Edge])
     extractGraph' nodeSize t =
       let curHash = nodeHash t
+          minSim =
+            if null relevance
+              then 1
+              else 0
           sim =
-            foldl max 0 . catMaybes $ (relevance !?) <$> Set.toList (novel t)
+            foldl max minSim . catMaybes
+              $ (relevance !?) <$> Set.toList (novel t)
           node =
             Node
               { color =
