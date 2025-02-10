@@ -120,6 +120,8 @@ writeGraph config reactions tree file = do
   similarities <-
     Cfg.lookup config "input.similarities"
       >>= maybe (pure Map.empty) readCompoundSimilarities
+  Cfg.lookup config "exploration.ascii"
+    >>= mapM_ (flip when (putStr (asciiTree names tree)))
   BS.writeFile file $ plotTreeAsGraph reactions names similarities tree
   putStrLn $ "   Graph written to " <> file
 

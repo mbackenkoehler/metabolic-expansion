@@ -1,11 +1,13 @@
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE OverloadedStrings     #-}
 
 module Draw
   ( plotTreeAsGraph
+  , asciiTree
   ) where
 
 import           Data.Aeson
@@ -18,12 +20,19 @@ import           Data.Maybe           (catMaybes, fromMaybe, isJust)
 import qualified Data.Set             as Set
 import           Data.Text            hiding (foldl, null)
 import qualified Data.Text.Encoding   as TE
+import qualified Data.Tree            as T
 import           GHC.Generics
 import           Lucid
 import           Lucid.Base
 
 import           Exploration
 import           Metabolome
+
+asciiTree :: Map MetaboliteId Text -> Tree -> String
+asciiTree names = T.drawTree . T.unfoldTree renderTree
+  where
+    renderTree tree =
+      (unpack (novelNames names tree), fromMaybe [] (children tree))
 
 type NodeId = Int
 
@@ -83,9 +92,7 @@ extractGraph reactions names relevance tree = (Map.elems nodeMap, nub edges'')
                     else "green"
               , size = max 5 (sim * nodeSize)
               , id = curHash
-              , label =
-                  intercalate ", "
-                    $ [fromMaybe c (names !? c) | c <- Set.toList t.novel]
+              , label = novelNames names t
               , title = "Similarity: " <> pack (show sim)
               , shape = "dot"
               }
@@ -128,6 +135,10 @@ extractGraph reactions names relevance tree = (Map.elems nodeMap, nub edges'')
           (nodes', edges') = unzip $ extractGraph' newNodeSize <$> descendants
        in ( Map.insert curHash node (Map.unions (missingNodes : nodes'))
           , Prelude.concat (missingEdges : edges : edges'))
+
+novelNames :: Map MetaboliteId Text -> Tree -> Text
+novelNames names t =
+  intercalate ", " $ [fromMaybe c (names !? c) | c <- Set.toList t.novel]
 
 referrerpolicy_ :: Text -> Attribute
 referrerpolicy_ = makeAttribute "referrerpolicy"
